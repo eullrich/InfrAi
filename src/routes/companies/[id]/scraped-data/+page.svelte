@@ -12,35 +12,59 @@
   }
 
   export let data: PageData;
-  let selectedPages: number[] = [];
+  let isLoading = false;
+  let statusMessage = '';
 
-  // Toggle selection of pages
-  function toggleSelection(pageId: number) {
-    if (selectedPages.includes(pageId)) {
-      selectedPages = selectedPages.filter(id => id !== pageId);
-    } else {
-      selectedPages = [...selectedPages, pageId];
-    }
-  }
+  // Function to trigger the backend insight generation
+  async function generateInsights() {
+    isLoading = true;
+    statusMessage = 'Generating insights...';
 
-  // Placeholder for LLM processing
-  async function processWithLLM() {
-    if (selectedPages.length === 0) {
-      alert('Please select at least one page');
-      return;
+    try {
+      const response = await fetch(`/api/companies/${data.companyId}/process-insights`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || `HTTP error! status: ${response.status}`);
+      }
+
+      statusMessage = result.message || 'Insights generated successfully!';
+      alert(statusMessage); // Simple feedback
+
+      // Optionally redirect or update UI
+      // window.location.href = `/companies/${data.companyId}/insights`;
+
+    } catch (error: any) {
+      console.error('Error generating insights:', error);
+      statusMessage = `Error: ${error.message}`;
+      alert(statusMessage); // Simple feedback
+    } finally {
+      isLoading = false;
     }
-    // TODO: Replace this with actual LLM processing logic
-    console.log('Selected pages for processing:', selectedPages);
   }
 </script>
 
 <h1>Scraped Data for Company ID: {data.companyId}</h1>
 
+<nav>
+  <a href="/companies/{data.companyId}/scraped-data">Scraped Data</a> |
+  <a href="/companies/{data.companyId}/insights">View Insights</a>
+</nav>
+
 {#if data.pages.length > 0}
+  <button on:click={generateInsights} disabled={isLoading}>
+    {isLoading ? 'Processing...' : 'Generate Company Insights'}
+  </button>
+  {#if statusMessage}<p>{statusMessage}</p>{/if}
+
+  <hr style="margin: 20px 0;" />
+  <h2>Raw Scraped Pages</h2>
   <table>
     <thead>
       <tr>
-        <th>Select</th>
         <th>URL</th>
         <th>Title</th>
         <th>Parsed Text (Snippet)</th>
@@ -49,17 +73,19 @@
     <tbody>
       {#each data.pages as page}
         <tr>
-          <td><input type="checkbox" on:change={() => toggleSelection(page.id)} /></td>
-          <td>{page.url}</td>
-          <td>{page.title}</td>
-          <td>{page.parsed_text ? page.parsed_text.substring(0, 100) + '...' : 'No text'}</td>
+          <td><a href={page.url} target="_blank" rel="noopener noreferrer">{page.url}</a></td>
+          <td>{page.title || '(No title)'}</td>
+          <td>{page.parsed_text ? page.parsed_text.substring(0, 150) + '...' : 'No text'}</td>
         </tr>
       {/each}
     </tbody>
   </table>
-  <button on:click={processWithLLM}>Process with LLM</button>
 {:else}
   <p>No pages found for this company.</p>
+  <button on:click={generateInsights} disabled={isLoading}>
+    {isLoading ? 'Processing...' : 'Attempt Insight Generation (No Pages Found)'}
+  </button>
+  {#if statusMessage}<p>{statusMessage}</p>{/if}
 {/if}
 
 <style>

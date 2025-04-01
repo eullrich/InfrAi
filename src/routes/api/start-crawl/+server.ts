@@ -5,13 +5,40 @@ import * as cheerio from 'cheerio';
 import type { RequestEvent } from '@sveltejs/kit';
 import { supabase } from '$lib/supabase-init.server';
 
+// --- Configuration ---
+const MAX_LINKS_TO_ADD = 25;
+const PREFERRED_KEYWORDS = ['pricing', 'about', 'contact', 'features', 'product', 'service', 'solution', 'docs', 'blog', 'company', 'team', 'offerings', 'use-cases', 'resources', 'insights', 'platform', 'overview'];
+const EXCLUDED_KEYWORDS = ['login', 'signup', 'careers', 'support', 'legal', 'terms', 'privacy', 'cart', 'checkout', 'account', 'profile', 'events', 'webinar', 'jobs', 'hiring', 'apply', 'faq', 'help'];
+
+
 // Flag to prevent multiple crawls from running simultaneously
 let crawling = false;
 
+// --- Helper Functions ---
+function calculateScore(url: string, anchorText: string, inNav: boolean, inFooter: boolean, inAside: boolean): number {
+	let score = 0;
+	const lowerUrl = url.toLowerCase();
+	const lowerAnchor = anchorText.toLowerCase();
+
+	// +1 for each preferred keyword in URL or anchor text
+	PREFERRED_KEYWORDS.forEach(keyword => {
+		if (lowerUrl.includes(keyword)) score++;
+		if (lowerAnchor.includes(keyword)) score++; // Count anchor text separately
+	});
+
+	// +2 if in main navigation
+	if (inNav) score += 2;
+	// +1 if in footer or aside
+	if (inFooter || inAside) score += 1;
+
+	return score;
+}
+
+// --- Main Crawl Logic ---
 // Updated crawlNext to accept baseDomain for domain filtering
 async function crawlNext(companyId: number, baseDomain: string): Promise<void> {
-  if (crawling) return;
-  crawling = true;
+	if (crawling) return;
+	crawling = true;
 
   try {
 
@@ -44,51 +71,80 @@ async function crawlNext(companyId: number, baseDomain: string): Promise<void> {
         const title = $('title').text();
         const parsedText = $('body').text().replace(/\s+/g, ' ').trim();
 
-        // Extract links only if depth === 0, within the same domain
+        // Extract, filter, score, and limit links only if depth === 0
         if (depth === 0) {
-          const links: string[] = [];
+          const extractedLinks: { url: string; anchorText: string; score: number }[] = [];
+          const baseHostname = new URL(baseDomain).hostname; // Get hostname from baseDomain
+
           $('a[href]').each((i: number, elem: any) => {
             const href = $(elem).attr('href');
             if (!href) return;
+
             try {
               // Resolve relative or absolute URLs
               const absoluteUrl = new URL(href, url);
               const linkHostname = absoluteUrl.hostname;
-              const baseHostname = new URL(baseDomain).hostname; // Get hostname from baseDomain (e.g., hyperbolic.xyz)
 
-              // Include links if hostname matches base or is a subdomain of base and does not contain '#'
-              if ((linkHostname === baseHostname || linkHostname.endsWith('.' + baseHostname)) && !absoluteUrl.hash) {
-                links.push(absoluteUrl.href);
+              // Basic Filters: Same domain/subdomain, no hash
+              if (!(linkHostname === baseHostname || linkHostname.endsWith('.' + baseHostname)) || absoluteUrl.hash) {
+                return; // Skip external links or links with fragments
               }
+
+              const linkUrl = absoluteUrl.href;
+              const lowerLinkUrl = linkUrl.toLowerCase();
+
+              // Filter Excluded Keywords
+              if (EXCLUDED_KEYWORDS.some(keyword => lowerLinkUrl.includes(keyword))) {
+                // console.log(`[${companyId}] Excluding link by keyword: ${linkUrl}`);
+                return; // Skip excluded links
+              }
+
+              // Get context for scoring
+              const anchorText = $(elem).text().trim();
+              const inNav = $(elem).closest('nav').length > 0;
+              const inFooter = $(elem).closest('footer').length > 0;
+              const inAside = $(elem).closest('aside').length > 0;
+
+              // Calculate score
+              const score = calculateScore(linkUrl, anchorText, inNav, inFooter, inAside);
+
+              extractedLinks.push({ url: linkUrl, anchorText, score });
+
             } catch (e) {
               // Ignore invalid URLs
-              console.warn(`Skipping invalid URL '${href}' found on ${url}: ${e}`);
+              console.warn(`[${companyId}] Skipping invalid URL '${href}' found on ${url}: ${e}`);
             }
           });
 
-          // Insert new links with depth 1, ignoring duplicates individually
-          if (links.length > 0) {
-            console.error(`[${companyId}] Found ${links.length} potential new pages (depth 1) on ${url}. Attempting individual inserts...`);
-            for (const link of links) {
-              const newPage = { company_id: companyId, url: link, depth: 1 };
+          // Sort links by score (descending)
+          extractedLinks.sort((a, b) => b.score - a.score);
+
+          // Select top links up to the limit
+          const linksToInsert = extractedLinks.slice(0, MAX_LINKS_TO_ADD);
+
+          // Insert selected links with depth 1, ignoring duplicates individually
+          if (linksToInsert.length > 0) {
+            console.error(`[${companyId}] Found ${extractedLinks.length} potential links on ${url}. Selecting top ${linksToInsert.length} (max ${MAX_LINKS_TO_ADD}) after filtering/scoring. Attempting inserts...`);
+            for (const linkData of linksToInsert) {
+              const newPage = { company_id: companyId, url: linkData.url, depth: 1 };
               const { error: insertError } = await supabase.from('pages').insert(newPage);
 
               if (insertError) {
                 if (insertError.code === '23505') {
                   // Log duplicate skips individually
-                  console.error(`[${companyId}] Page already existed, skipped insertion: ${link}`);
+                  console.error(`[${companyId}] Page already existed, skipped insertion: ${linkData.url}`); // Fixed variable name here
                 } else {
                   // Log other critical errors more prominently
-                  console.error(`[${companyId}] CRITICAL ERROR inserting page ${link}:`, insertError.message, insertError.details, insertError.hint);
+                  console.error(`[${companyId}] CRITICAL ERROR inserting page ${linkData.url}:`, insertError.message, insertError.details, insertError.hint);
                 }
               } else {
                 // Log individual success
-                console.error(`[${companyId}] Successfully inserted new page: ${link}`);
+                // console.error(`[${companyId}] Successfully inserted new page: ${linkData.url} (Score: ${linkData.score})`);
               }
             }
-            console.error(`[${companyId}] Finished attempting individual inserts for pages found on ${url}.`);
+            console.error(`[${companyId}] Finished attempting inserts for ${linksToInsert.length} selected pages found on ${url}.`);
           } else {
-            console.error(`[${companyId}] No new depth 1 links found or matched domain filter on ${url}.`); // Log if no links found/matched
+            console.error(`[${companyId}] No relevant depth 1 links found after filtering/scoring on ${url}.`);
           }
         }
 

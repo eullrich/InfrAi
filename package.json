@@ -32,10 +32,12 @@
 		]
 	},
 	"dependencies": {
+		"@google/generative-ai": "^0.24.0",
 		"@supabase/supabase-js": "^2.49.4",
 		"cheerio": "^1.0.0",
 		"node-fetch": "^3.3.2",
 		"svelte-radix": "^2.0.1",
+		"svelte-sonner": "^0.3.28",
 		"uuid": "^11.1.0"
 	}
 }
