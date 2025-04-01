@@ -1,110 +1,196 @@
 // src/routes/api/start-crawl/+server.ts
-import { supabase } from '$lib/supabase.js';
+import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import type { RequestEvent } from '@sveltejs/kit';
+import { supabase } from '$lib/supabase-init.server';
 
 // Flag to prevent multiple crawls from running simultaneously
 let crawling = false;
 
-async function crawlNext(companyId: string | number): Promise<void> {
-  if (crawling) return; // Skip if already crawling
+// Updated crawlNext to accept baseDomain for domain filtering
+async function crawlNext(companyId: number, baseDomain: string): Promise<void> {
+  if (crawling) return;
   crawling = true;
 
-  while (true) {
-    // Fetch the next uncrawled page for this company
-    const { data: pages, error } = await supabase
-      .from('pages')
-      .select('url')
-      .eq('company_id', companyId)
-      .is('raw_html', null) // Find pages that haven't been crawled yet
-      .limit(1);
+  try {
 
-    if (error || pages.length === 0) {
-      crawling = false; // Stop if no more pages or an error occurs
-      break;
-    }
+    while (true) {
+      // Fetch the next uncrawled page, including depth
+      const { data: pages, error } = await supabase
+        .from('pages')
+        .select('url, depth')
+        .eq('company_id', companyId)
+        .is('raw_html', null)
+        .limit(1);
 
-    const url = pages[0].url;
-
-    try {
-      // Fetch the page content
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (error || pages.length === 0) {
+        crawling = false; // Stop if no more pages or an error occurs
+        break;
       }
-      const html = await response.text();
 
-      // Parse HTML with cheerio
-      const $ = cheerio.load(html);
-      const title = $('title').text();
-      const parsedText = $('body').text().replace(/\s+/g, ' ').trim();
+      const { url, depth } = pages[0];
 
-      // Extract links within the same domain
-      const links: string[] = [];
-      $('a').each((i: number, elem: any) => {
-        const href = $(elem).attr('href');
-        if (href) {
-          if (href.startsWith('/')) {
-            // Relative URL
-            links.push(new URL(href, url).href);
-          } else if (href.startsWith(url)) {
-            // Absolute URL within the same domain
-            links.push(href);
+      try {
+        // Fetch the page content
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const html = await response.text();
+
+        // Parse HTML with cheerio
+        const $ = cheerio.load(html);
+        const title = $('title').text();
+        const parsedText = $('body').text().replace(/\s+/g, ' ').trim();
+
+        // Extract links only if depth === 0, within the same domain
+        if (depth === 0) {
+          const links: string[] = [];
+          $('a[href]').each((i: number, elem: any) => {
+            const href = $(elem).attr('href');
+            if (!href) return;
+            try {
+              // Resolve relative or absolute URLs
+              const absoluteUrl = new URL(href, url);
+              const linkHostname = absoluteUrl.hostname;
+              const baseHostname = new URL(baseDomain).hostname; // Get hostname from baseDomain (e.g., hyperbolic.xyz)
+
+              // Include links if hostname matches base or is a subdomain of base and does not contain '#'
+              if ((linkHostname === baseHostname || linkHostname.endsWith('.' + baseHostname)) && !absoluteUrl.hash) {
+                links.push(absoluteUrl.href);
+              }
+            } catch (e) {
+              // Ignore invalid URLs
+              console.warn(`Skipping invalid URL '${href}' found on ${url}: ${e}`);
+            }
+          });
+
+          // Insert new links with depth 1, ignoring duplicates individually
+          if (links.length > 0) {
+            console.error(`[${companyId}] Found ${links.length} potential new pages (depth 1) on ${url}. Attempting individual inserts...`);
+            for (const link of links) {
+              const newPage = { company_id: companyId, url: link, depth: 1 };
+              const { error: insertError } = await supabase.from('pages').insert(newPage);
+
+              if (insertError) {
+                if (insertError.code === '23505') {
+                  // Log duplicate skips individually
+                  console.error(`[${companyId}] Page already existed, skipped insertion: ${link}`);
+                } else {
+                  // Log other critical errors more prominently
+                  console.error(`[${companyId}] CRITICAL ERROR inserting page ${link}:`, insertError.message, insertError.details, insertError.hint);
+                }
+              } else {
+                // Log individual success
+                console.error(`[${companyId}] Successfully inserted new page: ${link}`);
+              }
+            }
+            console.error(`[${companyId}] Finished attempting individual inserts for pages found on ${url}.`);
+          } else {
+            console.error(`[${companyId}] No new depth 1 links found or matched domain filter on ${url}.`); // Log if no links found/matched
           }
         }
-      });
 
-      // Insert new links into the database (ignoring duplicates)
-      if (links.length > 0) {
-        const newPages = links.map(link => ({ company_id: companyId, url: link }));
-        await supabase.from('pages').insert(newPages).then(({ error }) => {
-          if (error && error.code !== '23505') { // Ignore duplicate key errors (23505)
-            console.error('Error inserting new pages:', error);
-          }
-        });
+        // Update the current page with crawled data
+        await supabase
+          .from('pages')
+          .update({
+            raw_html: html,
+            parsed_text: parsedText,
+            title: title,
+            crawl_date: new Date().toISOString()
+          })
+          .eq('url', url);
+
+        // Add a delay to avoid overwhelming the server or target website
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (err) {
+        console.error(`Failed to crawl ${url}:`, err);
+        // Mark the page as processed to avoid infinite loops
+        await supabase
+          .from('pages')
+          .update({ crawl_date: new Date().toISOString() })
+          .eq('url', url);
       }
-
-      // Update the current page with crawled data
-      await supabase
-        .from('pages')
-        .update({
-          raw_html: html,
-          parsed_text: parsedText,
-          title,
-          crawl_date: new Date().toISOString()
-        })
-        .eq('url', url);
-
-      // Add a delay to avoid overwhelming the server or target website
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } catch (err) {
-      console.error(`Failed to crawl ${url}:`, err);
-      // Optionally mark the page as processed to avoid infinite loops
-      await supabase
-        .from('pages')
-        .update({ crawl_date: new Date().toISOString() })
-        .eq('url', url);
     }
+  } catch (e) {
+    console.error("Error in crawlNext", e)
   }
 }
 
 export async function POST({ request }: RequestEvent) {
-  const { companyId, mainUrl } = await request.json();
+  console.error("[1] POST function called!");
+  const { mainUrl, companyName } = await request.json();
 
-  // Insert the main URL into the pages table (if not already present)
-  await supabase
-    .from('pages')
-    .insert([{ company_id: companyId, url: mainUrl }])
-    .then(({ error }) => {
-      if (error && error.code !== '23505') { // Ignore duplicate key errors
-        console.error('Error inserting main URL:', error);
+  if (!mainUrl) {
+    return new Response('Missing mainUrl', { status: 400 });
+  }
+
+  try {
+    const urlObject = new URL(mainUrl);
+    const baseDomain = urlObject.origin; // e.g., "https://www.example.com"
+    //const companyName = urlObject.hostname; // Use hostname as default name e.g., www.example.com
+
+    // 1. Insert the company into the 'companies' table
+    const { error: companyInsertError, data: companyData } = await supabase
+      .from('companies')
+      .insert([{ name: companyName, domain: baseDomain }])
+      .select('id');
+
+    if (companyInsertError) {
+      console.error(`Error inserting company:`, companyInsertError);
+      return new Response(`Failed to insert company record: ${companyInsertError.message}`, { status: 500 });
+    }
+
+    const companyId = companyData[0].id;
+    console.error(`Company record inserted with ID: ${companyId}`);
+
+    // 2. Proceed with checking/inserting the page
+    console.error(`Checking if main URL exists: ${mainUrl}`);
+    const { data: existingPages, error: selectError } = await supabase
+      .from('pages')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('url', mainUrl);
+
+    if (selectError) {
+      console.error('Error checking if main URL exists:', selectError);
+    } else if (existingPages && existingPages.length > 0) {
+      console.error(`Main URL ${mainUrl} already exists, skipping insertion.`);
+    } else {
+      // Insert the main URL with depth 0 only if it wasn't found
+      console.error(`Inserting main URL: ${mainUrl}`);
+      const { error: pageInsertError } = await supabase
+        .from('pages')
+        .insert([{ company_id: companyId, url: mainUrl, depth: 0 }]);
+
+      if (pageInsertError) {
+        // This is where the original foreign key error likely happened.
+        console.error(`Error inserting main URL page:`, pageInsertError);
+        // Return an error response as the initial page couldn't be added.
+        return new Response(`Failed to insert initial page: ${pageInsertError.message}`, { status: 500 });
       }
+      console.error(`Main URL page inserted successfully.`);
+    }
+
+    console.error(`Calling crawlNext...`);
+    // Start the crawling process asynchronously
+    crawlNext(companyId, baseDomain);
+
+    // Return a success response immediately
+    // Consider returning JSON for consistency, even if simple
+    return new Response(JSON.stringify({ message: 'Crawling process initiated successfully', companyId: companyId }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
 
-  // Start the crawling process in the background
-  crawlNext(companyId);
-
-  // Return a response immediately so the client isn't blocked
-  return new Response('Crawling started', { status: 200 });
+  } catch (error) {
+    console.error(`Unexpected error in POST handler:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return new Response(JSON.stringify({ error: 'Failed to start crawl', details: errorMessage }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
