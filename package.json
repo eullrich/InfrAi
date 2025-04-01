@@ -32,6 +32,9 @@
 		]
 	},
 	"dependencies": {
+		"@supabase/supabase-js": "^2.49.4",
+		"cheerio": "^1.0.0",
+		"node-fetch": "^3.3.2",
 		"svelte-radix": "^2.0.1"
 	}
 }
