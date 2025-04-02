@@ -1,3 +1,4 @@
+
 // src/lib/supabase-init.server.ts
 // This file is only for server-side Supabase initialization
 import { createClient } from '@supabase/supabase-js';
