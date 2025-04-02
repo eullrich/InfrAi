@@ -5,12 +5,17 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { enhance } from '$app/forms';
-	import { toast } from 'svelte-sonner'; // Assuming svelte-sonner is used for toasts
+	import { toast } from 'svelte-sonner';
+	import { invalidateAll } from '$app/navigation';
+	import { supabase } from '$lib/supabaseClient'; // Corrected import path
 
 	export let data: PageData;
 	export let form: ActionData;
 
 	let scrapingStates: { [key: string]: boolean } = {}; // Track loading state per company
+	let email = '';
+	let password = '';
+	let loading = false;
 	
 	// Helper function to format dates
 	function formatDate(dateString: string | null | undefined): string {
@@ -24,7 +29,8 @@
 	
 	let companies = data.companies || [];
 
-	async function startScrape(companyName: string, domain: string | null) {
+	// Updated to accept companyId directly
+	async function startScrape(companyId: number, companyName: string, domain: string | null) {
 		if (!domain) {
 			toast.error(`Cannot scrape ${companyName}: Company domain is missing.`);
 			return;
@@ -36,15 +42,7 @@
 			mainUrl = `https://${mainUrl}`;
 		}
 
-		// Find companyId based on name (less ideal, but necessary if not passed)
-		// A better approach might be to pass companyId directly if available easily
-		const company = companies.find(c => c.name === companyName);
-		if (!company) {
-			toast.error(`Cannot find company ID for ${companyName}`);
-			return;
-		}
-		const companyId = company.id;
-
+		// No need to find companyId anymore, it's passed directly
 
 		scrapingStates = { ...scrapingStates, [companyId]: true };
 
@@ -54,7 +52,8 @@
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({ mainUrl, companyName }) // Send mainUrl and companyName
+				// Send mainUrl and companyId instead of companyName
+				body: JSON.stringify({ mainUrl, companyId }) 
 			});
 
 			// Check if the response is JSON before parsing
@@ -79,16 +78,63 @@
 			scrapingStates = { ...scrapingStates, [companyId]: false };
 		}
 	}
+
+	async function handleLogin() {
+		loading = true;
+		try {
+			const { error } = await supabase.auth.signInWithPassword({ email, password });
+			if (error) {
+				toast.error(`Login failed: ${error.message}`);
+			} else {
+				toast.success('Logged in successfully!');
+				// Invalidate data to re-run load function and get session
+				await invalidateAll(); 
+			}
+		} catch (err: any) {
+			toast.error(`Login error: ${err.message}`);
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function handleLogout() {
+		loading = true;
+		try {
+			const { error } = await supabase.auth.signOut();
+			if (error) {
+				toast.error(`Logout failed: ${error.message}`);
+			} else {
+				toast.success('Logged out successfully!');
+				// Invalidate data to re-run load function and clear session
+				await invalidateAll();
+			}
+		} catch (err: any) {
+			toast.error(`Logout error: ${err.message}`);
+		} finally {
+			loading = false;
+		}
+	}
+
+	$: companies = data.companies || [];
+	$: session = data.session; // Get session from page data
+
 </script>
 
 <div class="container mx-auto p-6">
-	<div class="flex justify-between items-center mb-6">
-		<h1 class="text-3xl font-bold">Admin Dashboard</h1>
-		<Button href="/" variant="outline">Back to Home</Button>
-	</div>
+	{#if session}
+		<!-- Logged In State -->
+		<div class="flex justify-between items-center mb-6">
+			<h1 class="text-3xl font-bold">Admin Dashboard</h1>
+			<div class="flex items-center space-x-4">
+				<span class="text-sm text-gray-600 dark:text-gray-400">Welcome, {session.user.email}</span>
+				<Button on:click={handleLogout} variant="outline" disabled={loading}>
+					{loading ? 'Logging out...' : 'Logout'}
+				</Button>
+			</div>
+		</div>
 
-	<!-- Add new company form -->
-	<Card.Root class="mb-8">
+		<!-- Add new company form -->
+		<Card.Root class="mb-8">
 		<Card.Header>
 			<Card.Title>Add New Company</Card.Title>
 			<Card.Description>Enter the details of the company you want to add</Card.Description>
@@ -104,12 +150,12 @@
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<div class="space-y-2">
 						<label for="name" class="text-sm font-medium">Company Name*</label>
-						<Input type="text" id="name" name="name" placeholder="e.g. AI Solutions Inc." value={form?.name || ''} required />
+						<Input type="text" id="name" name="name" placeholder="e.g. AI Solutions Inc." value={form?.name ?? ''} required />
 					</div>
 					
 					<div class="space-y-2">
 						<label for="domain" class="text-sm font-medium">Website Domain</label>
-						<Input type="text" id="domain" name="domain" placeholder="e.g. example.com" value={form?.domain || ''} />
+						<Input type="text" id="domain" name="domain" placeholder="e.g. example.com" value={form?.domain ?? ''} />
 					</div>
 				</div>
 				
@@ -119,7 +165,7 @@
 			</form>
 		</Card.Content>
 	</Card.Root>
-	
+
 	<!-- Companies Table -->
 	<Card.Root>
 		<Card.Header>
@@ -182,10 +228,10 @@
 										</form>
 									</td>
 									<td class="p-3 text-center">
-										<Button 
+										<Button
 											variant="secondary"
 											size="sm"
-											on:click={() => startScrape(company.name, company.domain)}
+											on:click={() => startScrape(company.id, company.name, company.domain)}
 											disabled={scrapingStates[company.id]}
 										>
 											{scrapingStates[company.id] ? 'Scraping...' : 'Scrape'}
@@ -203,4 +249,34 @@
 			{/if}
 		</Card.Content>
 	</Card.Root>
+
+	{:else}
+		<!-- Logged Out State - Login Form -->
+		<div class="max-w-md mx-auto mt-10">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Admin Login</Card.Title>
+					<Card.Description>Please log in to access the admin dashboard.</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<form on:submit|preventDefault={handleLogin} class="space-y-4">
+						<div class="space-y-2">
+							<label for="email" class="text-sm font-medium">Email</label>
+							<Input type="email" id="email" name="email" bind:value={email} placeholder="admin@example.com" required disabled={loading} />
+						</div>
+						<div class="space-y-2">
+							<label for="password" class="text-sm font-medium">Password</label>
+							<Input type="password" id="password" name="password" bind:value={password} required disabled={loading} />
+						</div>
+						<Button type="submit" class="w-full" disabled={loading}>
+							{loading ? 'Logging in...' : 'Login'}
+						</Button>
+					</form>
+				</Card.Content>
+			</Card.Root>
+			<p class="mt-4 text-center text-sm text-gray-500">
+				<a href="/" class="hover:underline">Back to Home</a>
+			</p>
+		</div>
+	{/if}
 </div>

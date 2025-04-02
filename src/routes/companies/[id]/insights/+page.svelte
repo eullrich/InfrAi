@@ -3,6 +3,10 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js'; // Keep for the "Generate Insights" button
+	import { enhance } from '$app/forms';
+	import { toast } from 'svelte-sonner';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import { invalidateAll } from '$app/navigation'; // Import invalidateAll
 
 	export let data: PageData;
 
@@ -359,7 +363,61 @@
 				<p class="mt-2 text-sm text-gray-600 dark:text-gray-400 max-w-md mx-auto">
 					Company insights have not been generated yet. You can generate them now to analyze this company's offerings.
 				</p>
-				<form method="POST" action="/api/companies/{data.companyId}/process-insights" class="mt-6">
+				<form
+					method="POST"
+					action="/api/companies/{data.companyId}/process-insights"
+					class="mt-6"
+					use:enhance={({ formElement, formData, action, cancel }) => {
+						// This function runs *before* the request is sent
+
+						// Temporary store for promise handlers
+						let resolvePromise: (value: Response | PromiseLike<Response>) => void;
+						let rejectPromise: (reason?: any) => void;
+
+						// Create the promise that toast.promise will track
+						const promise = new Promise<Response>((resolve, reject) => {
+							resolvePromise = resolve;
+							rejectPromise = reject;
+						});
+
+						// Show the loading toast immediately
+						toast.promise(promise, {
+							loading: 'Generating insights...',
+							success: (res) => {
+								// Optional: Invalidate data after success to refresh the page content
+								// invalidateAll();
+								return `Insights generation started successfully!`;
+							},
+							error: (err) => {
+								// Safely access error message
+								const message = err instanceof Error ? err.message : String(err);
+								return `Error starting insights generation: ${message || 'Unknown error'}`;
+							}
+						});
+
+						// Return the callback that runs *after* the request completes
+						return async ({ result, update }) => {
+							// Resolve or reject the promise based on the fetch result
+							if (result.type === 'success' || result.type === 'redirect') {
+								// Use a generic success response for the toast
+								resolvePromise(new Response('Success', { status: result.status }));
+							} else if (result.type === 'error') {
+								rejectPromise(result.error);
+							} else if (result.type === 'failure') {
+								// Handle potential validation errors or other failures from ActionResult
+								const message = (result.data as { message?: string })?.message || 'Form submission failed';
+								rejectPromise(new Error(message));
+							} else {
+								// Fallback for unexpected result types
+								rejectPromise(new Error('Unknown form submission result'));
+							}
+
+							// Allow SvelteKit to update the page normally after the toast logic runs.
+							// If you called invalidateAll() in success, this might cause a refresh.
+							await update();
+						};
+					}}
+				>
 					<Button type="submit" size="lg">
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
 							<path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />

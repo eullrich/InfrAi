@@ -177,33 +177,50 @@ async function crawlNext(companyId: number, baseDomain: string): Promise<void> {
 
 export async function POST({ request }: RequestEvent) {
   console.error("[1] POST function called!");
-  const { mainUrl, companyName } = await request.json();
+  // Expect companyId instead of companyName
+  const { mainUrl, companyId } = await request.json(); 
 
   if (!mainUrl) {
-    return new Response('Missing mainUrl', { status: 400 });
+    return new Response(JSON.stringify({ error: 'Missing mainUrl' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+  if (!companyId) {
+    return new Response(JSON.stringify({ error: 'Missing companyId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
   }
 
   try {
-    const urlObject = new URL(mainUrl);
-    const baseDomain = urlObject.origin; // e.g., "https://www.example.com"
-    //const companyName = urlObject.hostname; // Use hostname as default name e.g., www.example.com
-
-    // 1. Insert the company into the 'companies' table
-    const { error: companyInsertError, data: companyData } = await supabase
+    // 1. Fetch the company's domain using the provided companyId
+    const { data: companyData, error: companyFetchError } = await supabase
       .from('companies')
-      .insert([{ name: companyName, domain: baseDomain }])
-      .select('id');
+      .select('domain')
+      .eq('id', companyId)
+      .single();
 
-    if (companyInsertError) {
-      console.error(`Error inserting company:`, companyInsertError);
-      return new Response(`Failed to insert company record: ${companyInsertError.message}`, { status: 500 });
+    if (companyFetchError || !companyData) {
+      console.error(`Error fetching company domain for ID ${companyId}:`, companyFetchError);
+      return new Response(JSON.stringify({ error: 'Failed to find company record', details: companyFetchError?.message }), { status: 404, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const companyId = companyData[0].id;
-    console.error(`Company record inserted with ID: ${companyId}`);
+    const baseDomain = companyData.domain;
+    if (!baseDomain) {
+        console.error(`Company with ID ${companyId} has no domain.`);
+        return new Response(JSON.stringify({ error: 'Company record is missing domain information' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    
+    // Ensure mainUrl matches the company's base domain for safety/consistency
+    try {
+        const mainUrlObject = new URL(mainUrl);
+        const mainUrlDomain = mainUrlObject.origin;
+        if (mainUrlDomain !== baseDomain) {
+            console.warn(`Provided mainUrl (${mainUrl}) domain does not match company's base domain (${baseDomain}). Using company's base domain.`);
+            // Optionally, you could return an error here if they MUST match
+        }
+    } catch (e) {
+        return new Response(JSON.stringify({ error: 'Invalid mainUrl format' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
 
-    // 2. Proceed with checking/inserting the page
-    console.error(`Checking if main URL exists: ${mainUrl}`);
+
+    // 2. Proceed with checking/inserting the page using the provided companyId
+    console.error(`[${companyId}] Checking if main URL exists: ${mainUrl}`);
     const { data: existingPages, error: selectError } = await supabase
       .from('pages')
       .select('*')
@@ -213,24 +230,24 @@ export async function POST({ request }: RequestEvent) {
     if (selectError) {
       console.error('Error checking if main URL exists:', selectError);
     } else if (existingPages && existingPages.length > 0) {
-      console.error(`Main URL ${mainUrl} already exists, skipping insertion.`);
+      console.error(`[${companyId}] Main URL ${mainUrl} already exists, skipping insertion.`);
     } else {
       // Insert the main URL with depth 0 only if it wasn't found
-      console.error(`Inserting main URL: ${mainUrl}`);
+      console.error(`[${companyId}] Inserting main URL: ${mainUrl}`);
       const { error: pageInsertError } = await supabase
         .from('pages')
-        .insert([{ company_id: companyId, url: mainUrl, depth: 0 }]);
+        .insert([{ company_id: companyId, url: mainUrl, depth: 0 }]); // Use the provided companyId
 
       if (pageInsertError) {
         // This is where the original foreign key error likely happened.
-        console.error(`Error inserting main URL page:`, pageInsertError);
+        console.error(`[${companyId}] Error inserting main URL page:`, pageInsertError);
         // Return an error response as the initial page couldn't be added.
-        return new Response(`Failed to insert initial page: ${pageInsertError.message}`, { status: 500 });
+        return new Response(JSON.stringify({ error: 'Failed to insert initial page', details: pageInsertError.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
       }
-      console.error(`Main URL page inserted successfully.`);
+      console.error(`[${companyId}] Main URL page inserted successfully.`);
     }
 
-    console.error(`Calling crawlNext...`);
+    console.error(`[${companyId}] Calling crawlNext...`);
     // Start the crawling process asynchronously
     crawlNext(companyId, baseDomain);
 
