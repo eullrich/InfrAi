@@ -25,12 +25,12 @@ graph LR
     E -- Store Insights --> B;
     D -- View Insights --> B;
 
-    style A fill:#e9a,stroke-width:2px; /* Admin UI - Pink */
-    style D fill:#aae,stroke-width:2px; /* User UI - Blue */
-    style B fill:#dda,stroke-width:2px; /* Supabase DB - Yellow */
-    style C fill:#eae,stroke-width:2px; /* Scraping Service - Magenta */
-    style E fill:#aea,stroke-width:2px; /* API Endpoint - Green */
-    style F fill:#eda,stroke-width:2px; /* Gemini API - Orange */
+    style A fill:#e9a,stroke-width:2px;
+    style D fill:#aae,stroke-width:2px;
+    style B fill:#dda,stroke-width:2px;
+    style C fill:#eae,stroke-width:2px;
+    style E fill:#aea,stroke-width:2px;
+    style F fill:#eda,stroke-width:2px;
 ```
 
 ## Project Structure
