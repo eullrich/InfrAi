@@ -1,0 +1,17 @@
+modules = ["nodejs-20", "web"]
+run = "npm run dev"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "node node_modules/vite/bin/vite.js preview --host 0.0.0.0"]
+build = ["sh", "-c", "npm run build"]
+
+[[ports]]
+localPort = 5173
+externalPort = 80
+
+[[ports]]
+localPort = 5174
+externalPort = 3000
