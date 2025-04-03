@@ -32,9 +32,9 @@ const model = genAI.getGenerativeModel({
 
 
 // --- Target JSON Schema Definition ---
-// Matches the company_insights table structure
+// Matches the updated company_insights table structure
 const desiredJsonSchema = `{
-  "tagline": "string | null", // Note: company_name is derived from the 'companies' table, not extracted here.
+  "tagline": "string | null", 
   "mission": "string | null",
   "service_offerings": [
     {
@@ -45,9 +45,7 @@ const desiredJsonSchema = `{
   ] | null,
   "pricing_overview": "string | null",
   "known_customers": ["string"] | null,
-  "offers_hosted_inference": "boolean",
-  "offers_rentable_gpus": "boolean",
-  "offers_finetuning_pipeline": "boolean",
+  "offering_labels": ["string"] | null, // Updated: Replaced boolean flags with labels array
   "target_audience": "string | null",
   "key_differentiators": ["string"] | null,
   "technology_overview": "string | null",
@@ -58,10 +56,16 @@ const desiredJsonSchema = `{
 
 // --- POST Request Handler ---
 export const POST: RequestHandler = async ({ params }) => {
-	const companyId = params.id;
+	const companyIdString = params.id;
 
-	if (!companyId) {
+	if (!companyIdString) {
 		throw error(400, 'Company ID is required');
+	}
+
+	const companyId = parseInt(companyIdString, 10); // Parse the ID string to a number
+
+	if (isNaN(companyId)) {
+		throw error(400, 'Invalid Company ID format'); // Handle cases where ID is not a number
 	}
 
 	if (!GOOGLE_GEMINI_API_KEY) {
@@ -83,15 +87,7 @@ export const POST: RequestHandler = async ({ params }) => {
 		const { data: pagesData, error: pagesError } = await supabase
 			.from('pages')
 			.select('id, parsed_text, url') // Select id to store as source_page_ids
-			.eq('company_id', companyId)
-			// .order('crawl_date', { ascending: false }) // Prioritize recent pages - replaced by custom ordering
-			// Manually construct the order clause as Supabase client might not directly support complex CASE in order()
-			// This is a workaround; ideally, use a view or function if this gets more complex.
-			// Note: Direct string injection into order is generally discouraged, but Supabase client options are limited here.
-			// Ensure companyId is properly handled to prevent SQL injection risks elsewhere.
-			// A safer approach might involve fetching more data and sorting/filtering in code, but let's try this first.
-			// UPDATE: Supabase JS client doesn't directly support raw ORDER BY clauses like this.
-			// We'll fetch more pages and prioritize in code instead. Fetching 2x the limit initially.
+			.eq('company_id', companyId) // Use the parsed numeric ID
 			.order('crawl_date', { ascending: false })
 			.limit(MAX_PAGES_TO_PROCESS * 2); // Fetch more to allow for prioritization
 
@@ -115,16 +111,14 @@ export const POST: RequestHandler = async ({ params }) => {
 			if (aScore !== bScore) {
 				return aScore - bScore; // Lower index (preferred path) comes first
 			}
-			// If priorities are equal, fallback to original order (crawl_date DESC)
-			// Since we fetched sorted by date, the relative order is maintained here.
 			return 0;
-		}).slice(0, MAX_PAGES_TO_PROCESS); // Limit to the final desired number
+		}).slice(0, MAX_PAGES_TO_PROCESS); 
 
 
 		// Combine text, respecting length limits
 		let combinedText = prioritizedPages
 			.map(page => `URL: ${page.url}\n\n${page.parsed_text || ''}`.trim())
-			.join('\n\n---\n\n'); // Separate pages clearly
+			.join('\n\n---\n\n'); 
 
 		if (combinedText.length > MAX_TEXT_LENGTH) {
 			combinedText = combinedText.substring(0, MAX_TEXT_LENGTH) + '... [TRUNCATED]';
@@ -132,71 +126,31 @@ export const POST: RequestHandler = async ({ params }) => {
 
 		const sourcePageIds = prioritizedPages.map(page => page.id);
 
-		// 2. Construct the prompt for Gemini using the detailed instructions
-		const prompt = `Analyze the provided text from the company’s website (multiple pages might be included, separated by '---') and extract the following information to populate the company_insights table. Return the results in JSON format, using the exact field names specified below. If information for a field is not found, use null for nullable fields (e.g., text, jsonb, ARRAY) or false for boolean fields.
+		// 2. Construct the prompt for Gemini using the updated instructions
+		const prompt = `Analyze the provided text from the company’s website (multiple pages might be included, separated by '---') and extract the following information to populate the company_insights table. Return the results in JSON format, using the exact field names specified below. If information for a field is not found, use null.
 
 **Fields to Extract:**
 
-*   **tagline (text):**
-    *   Extract a short, catchy phrase that encapsulates the company’s value proposition or unique selling point.
-    *   Look for prominent text in the hero section, main H1 heading, meta tags, or social media descriptions, especially on the home page (URL ending in '/').
-    *   If multiple candidates exist, choose the most concise and prominent one that reflects the company’s brand or mission.
-*   **pricing_overview (text):**
-    *   Prioritize content from URLs ending in '/pricing'.
-    *   Look for pricing tables, plans, or tiers, and extract key details such as plan names, features, and price ranges (e.g., "$99/month for Basic Plan").
-    *   If no dedicated pricing page exists, summarize any pricing details found elsewhere (e.g., blog posts, FAQs).
-    *   If no pricing information is available, return "Not available" or "Pricing upon request" if the text suggests it. Otherwise use null.
-*   **mission (text):**
-    *   Extract the company’s mission statement, often found on 'About Us' pages (URLs ending in '/about').
-    *   If not explicitly labeled as a mission, look for vision statements, company values, or overarching goals in sections like the CEO’s message, company history, or home page.
-    *   Summarize in a concise sentence if the statement is lengthy.
-*   **x_url (text) and linkedin_url (text):**
-    *   Search for explicit links pointing to 'twitter.com' or 'linkedin.com', with special attention to footer sections.
-    *   Also, look for social media icons or buttons that link to these platforms, even if the domain isn’t explicitly written.
-    *   Extract the full profile URL (e.g., "https://twitter.com/companyname"). If not found, use null.
-*   **service_offerings (jsonb):**
-    *   List distinct products or services described, including their names and brief descriptions.
-    *   Categorize them into broader categories (e.g., "hardware", "software", "consulting") and include relevant keywords as tags (e.g., "AI", "cloud").
-    *   Format as a JSON array of objects, e.g., [{"name": "Product A", "description": "AI-powered tool", "category": "software", "tags": ["AI", "automation"]}]. Use null if none found.
-*   **known_customers (ARRAY of text):**
-    *   List names of companies mentioned as customers or clients.
-    *   Look for phrases like "trusted by", "customers include", or similar sections.
-    *   Check case studies, testimonials, client lists, press releases, or news articles.
-    *   Review text associated with company logos (e.g., alt text, captions) as these often indicate customers.
-    *   Return as an array of strings, e.g., ["Company A", "Company B"]. Use null if none are found.
-*   **offers_hosted_inference (boolean):**
-    *   Determine if the company provides hosted inference services.
-    *   Look for keywords/phrases like "hosted inference," "model hosting," "inference API," or similar.
-    *   Return true if mentioned, false otherwise.
-*   **offers_rentable_gpus (boolean):**
-    *   Determine if the company offers rentable GPUs.
-    *   Look for keywords/phrases like "GPU rental," "cloud GPUs," "GPU access," or similar.
-    *   Return true if mentioned, false otherwise.
-*   **offers_finetuning_pipeline (boolean):**
-    *   Determine if the company provides a fine-tuning pipeline for models.
-    *   Look for keywords/phrases like "fine-tuning pipeline," "model customization," "tuning service," or similar.
-    *   Return true if mentioned, false otherwise.
-*   **target_audience (text):**
-    *   Identify the intended customer base by analyzing mentions of industries (e.g., "healthcare"), company sizes (e.g., "SMBs"), or use cases (e.g., "data scientists").
-    *   Summarize in a brief description, e.g., "Enterprises in healthcare and finance". Use null if not specified.
-*   **key_differentiators (ARRAY of text):**
-    *   Extract what sets the company apart from competitors, such as unique features, proprietary technology, or competitive advantages.
-    *   Look for phrases like "patented technology," "industry-first," or specific benefits highlighted in the text.
-    *   Return as an array of strings, e.g., ["Proprietary AI algorithms", "Real-time processing"]. Use null if none are found.
-*   **technology_overview (text):**
-    *   Summarize the company’s technological approach.
-    *   Look for descriptions of their tech stack, algorithms, or innovative methods (e.g., "Uses deep learning and cloud infrastructure").
-    *   Use null if no specific details are provided.
-*   **partnerships (ARRAY of text):**
-    *   List names of companies mentioned as partners (not customers), often in partnership sections, integrations, or collaborative projects.
-    *   Return as an array of strings, e.g., ["Partner A", "Partner B"]. Use null if none are found.
+*   **tagline (text):** Extract a short, catchy phrase encapsulating the company’s value proposition. Look in hero sections, H1s, meta tags. Choose the most concise and prominent.
+*   **pricing_overview (text):** Prioritize '/pricing' URLs. Extract details like plan names, features, price ranges. Summarize if found elsewhere. Use "Not available" or "Pricing upon request" if applicable, otherwise null.
+*   **mission (text):** Extract the mission statement, often on 'About Us' pages. Look for vision statements or company values if not explicit. Summarize if lengthy.
+*   **x_url (text) and linkedin_url (text):** Search for explicit links to 'twitter.com' or 'linkedin.com', especially in footers. Look for social media icons. Extract full profile URL or use null.
+*   **service_offerings (jsonb):** List distinct products/services with names, descriptions. Include relevant keywords as tags (e.g., "AI", "cloud"). Format as JSON array of objects: [{"name": "Product A", "description": "...", "tags": ["AI"]}]. Use null if none found.
+*   **known_customers (ARRAY of text):** List company names mentioned as customers/clients. Look for "trusted by", case studies, testimonials, logos. Return array of strings or null.
+*   **offering_labels (ARRAY of text):** Determine the key offerings based on keywords and add corresponding labels to an array. Return null or an empty array if none apply.
+    *   If text mentions "hosted inference," "model hosting," "inference API," or similar, include the label "Hosted Inference".
+    *   If text mentions "GPU rental," "cloud GPUs," "GPU access," or similar, include the label "Rentable GPUs".
+    *   If text mentions "fine-tuning pipeline," "model customization," "tuning service," or similar, include the label "Finetuning".
+*   **target_audience (text):** Identify intended customers (industries, company sizes, use cases). Summarize briefly (e.g., "Enterprises in healthcare"). Use null if not specified.
+*   **key_differentiators (ARRAY of text):** Extract unique selling points (unique features, proprietary tech). Look for "patented technology," "industry-first." Return array of strings or null.
+*   **technology_overview (text):** Summarize the tech stack, algorithms, methods (e.g., "Uses deep learning"). Use null if no details.
+*   **partnerships (ARRAY of text):** List names of partners (not customers). Look in partnership sections, integrations. Return array of strings or null.
 
 **Additional Instructions:**
-*   Focus on Relevance: Prioritize information directly tied to the company’s core business and offerings. Avoid generic or unrelated content.
-*   List Fields: For fields requiring lists (e.g., service_offerings, known_customers, partnerships), return arrays, even if empty ([]) or null if no data exists.
-*   Boolean Fields: Return true only with clear evidence in the text; default to false otherwise.
-*   Text Prioritization: If the input text is extensive, focus on key pages like home ('/'), about ('/about'), products/services, and pricing ('/pricing').
-*   Output Format: Ensure the output is valid JSON, with field names matching the company_insights table exactly.
+*   Focus on Relevance: Prioritize info tied to core business.
+*   List Fields: For array fields (service_offerings, known_customers, partnerships, offering_labels), return arrays, even if empty ([]) or null if no data exists.
+*   Text Prioritization: Focus on key pages like home ('/'), about ('/about'), products/services, pricing ('/pricing').
+*   Output Format: Ensure valid JSON matching the schema exactly.
 
 Desired JSON Schema (for reference, ensure output matches this structure):
 \`\`\`json
@@ -222,7 +176,6 @@ Generate the JSON output:`;
 
 		const llmOutputText = response.text();
 		console.log(`Gemini response received for company ID: ${companyId}. Raw Output Length: ${llmOutputText.length}`);
-		// Log first/last few characters for quick inspection, avoiding logging potentially huge outputs entirely
 		console.log(`Raw Output Start: ${llmOutputText.substring(0, 100)}...`);
 		console.log(`Raw Output End: ...${llmOutputText.substring(llmOutputText.length - 100)}`);
 
@@ -230,13 +183,12 @@ Generate the JSON output:`;
 		// 4. Parse the LLM JSON response
 		let insightsData;
 		try {
-			// Attempt to extract JSON robustly: find first '{' and last '}'
 			const jsonStart = llmOutputText.indexOf('{');
 			const jsonEnd = llmOutputText.lastIndexOf('}');
 
 			if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
 				console.error('Could not find valid JSON structure ({...}) in LLM response.');
-				console.error('LLM Raw Output Text:', llmOutputText); // Log the full raw output when structure is missing
+				console.error('LLM Raw Output Text:', llmOutputText); 
 				throw new Error('Valid JSON object not found in response');
 			}
 
@@ -247,16 +199,15 @@ Generate the JSON output:`;
 
 		} catch (parseError: any) {
 			console.error('Failed to parse JSON response from LLM:', parseError);
-			// Log the full raw output only on error for detailed debugging
 			console.error('LLM Raw Output Text:', llmOutputText);
 			throw error(500, `Failed to parse LLM response: ${parseError.message}`);
 		}
 
-		// Add metadata
+		// Add metadata - insightsData should now contain offering_labels instead of boolean flags
 		const dataToUpsert = {
 			...insightsData,
-			company_id: companyId,
-			llm_model_used: GEMINI_MODEL_NAME, // Keep track of the model used for generation
+			company_id: companyId, // Use the parsed numeric ID
+			llm_model_used: GEMINI_MODEL_NAME, 
 			processed_at: new Date().toISOString(),
 			source_page_ids: sourcePageIds
 		};
@@ -264,7 +215,7 @@ Generate the JSON output:`;
 		// 5. Upsert data into 'company_insights' table
 		const { error: upsertError } = await supabase
 			.from('company_insights')
-			.upsert(dataToUpsert, { onConflict: 'company_id' }); // Use company_id to handle conflicts (update if exists)
+			.upsert(dataToUpsert, { onConflict: 'company_id' }); 
 
 		if (upsertError) {
 			console.error('Supabase error upserting insights:', upsertError);
@@ -276,7 +227,6 @@ Generate the JSON output:`;
 
 	} catch (err: any) {
 		console.error(`Error processing insights for company ${companyId}:`, err);
-		// Use the error status if it's an HttpError, otherwise default to 500
 		const statusCode = err.status || 500;
 		const message = err.body?.message || err.message || 'An unexpected error occurred.';
 		throw error(statusCode, message);

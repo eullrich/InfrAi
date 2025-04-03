@@ -45,9 +45,7 @@ export type Database = {
           linkedin_url: string | null
           llm_model_used: string | null
           mission: string | null
-          offers_finetuning_pipeline: boolean | null
-          offers_hosted_inference: boolean | null
-          offers_rentable_gpus: boolean | null
+          offering_labels: string[] | null
           partnerships: string[] | null
           pricing_overview: string | null
           processed_at: string | null
@@ -66,9 +64,7 @@ export type Database = {
           linkedin_url?: string | null
           llm_model_used?: string | null
           mission?: string | null
-          offers_finetuning_pipeline?: boolean | null
-          offers_hosted_inference?: boolean | null
-          offers_rentable_gpus?: boolean | null
+          offering_labels?: string[] | null
           partnerships?: string[] | null
           pricing_overview?: string | null
           processed_at?: string | null
@@ -87,9 +83,7 @@ export type Database = {
           linkedin_url?: string | null
           llm_model_used?: string | null
           mission?: string | null
-          offers_finetuning_pipeline?: boolean | null
-          offers_hosted_inference?: boolean | null
-          offers_rentable_gpus?: boolean | null
+          offering_labels?: string[] | null
           partnerships?: string[] | null
           pricing_overview?: string | null
           processed_at?: string | null

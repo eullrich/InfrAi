@@ -11,9 +11,9 @@ export interface CompanyWithInsights {
   id: number;
   name: string;
   tagline: string | null;
-  offers_hosted_inference: boolean;
-  offers_rentable_gpus: boolean;
-  offers_finetuning_pipeline: boolean;
+  // Removed boolean fields
+  offering_labels?: string[] | null; // Added new labels field
+  service_offerings_tags?: string[]; // Re-added for homepage filtering logic
   // company_insights is intentionally omitted here as it's flattened
 }
 
@@ -24,9 +24,8 @@ export interface CompanyInsights {
   tagline?: string | null;
   mission?: string | null;
   target_audience?: string | null;
-  offers_hosted_inference?: boolean | null;
-  offers_rentable_gpus?: boolean | null;
-  offers_finetuning_pipeline?: boolean | null;
+  // Removed boolean fields
+  offering_labels?: string[] | null; // Added new labels field
   service_offerings?: { name?: string; description?: string; tags?: string[] }[] | null;
   key_differentiators?: string[] | null;
   technology_overview?: string | null;

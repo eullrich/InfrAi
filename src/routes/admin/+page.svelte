@@ -27,7 +27,9 @@
 		}
 	}
 	
-	let companies = data.companies || [];
+	// Reactive assignment based on data prop
+	$: companies = data.companies || [];
+	$: session = data.session; // Get session from page data
 
 	// Updated to accept companyId directly
 	async function startScrape(companyId: number, companyName: string, domain: string | null) {
@@ -42,8 +44,6 @@
 			mainUrl = `https://${mainUrl}`;
 		}
 
-		// No need to find companyId anymore, it's passed directly
-
 		scrapingStates = { ...scrapingStates, [companyId]: true };
 
 		try {
@@ -52,21 +52,18 @@
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				// Send mainUrl and companyId instead of companyName
 				body: JSON.stringify({ mainUrl, companyId }) 
 			});
 
-			// Check if the response is JSON before parsing
 			const contentType = response.headers.get("content-type");
 			if (contentType && contentType.indexOf("application/json") !== -1) {
 				const result = await response.json();
 				if (response.ok) {
-					toast.success(`Scraping started for ${companyName}. Job ID: ${result.companyId}`); // Use companyId from response if available
+					toast.success(`Scraping started for ${companyName}. Job ID: ${result.companyId}`); 
 				} else {
 					toast.error(`Failed to start scraping for ${companyName}: ${result.details || result.error || 'Unknown API error'}`);
 				}
 			} else {
-				// Handle non-JSON responses (like the plain text error)
 				const textResult = await response.text();
 				toast.error(`Failed to start scraping for ${companyName}: ${response.statusText} - ${textResult}`);
 			}
@@ -87,7 +84,6 @@
 				toast.error(`Login failed: ${error.message}`);
 			} else {
 				toast.success('Logged in successfully!');
-				// Invalidate data to re-run load function and get session
 				await invalidateAll(); 
 			}
 		} catch (err: any) {
@@ -105,7 +101,6 @@
 				toast.error(`Logout failed: ${error.message}`);
 			} else {
 				toast.success('Logged out successfully!');
-				// Invalidate data to re-run load function and clear session
 				await invalidateAll();
 			}
 		} catch (err: any) {
@@ -114,9 +109,6 @@
 			loading = false;
 		}
 	}
-
-	$: companies = data.companies || [];
-	$: session = data.session; // Get session from page data
 
 </script>
 
@@ -140,9 +132,38 @@
 			<Card.Description>Enter the details of the company you want to add</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			<form method="POST" action="?/addCompany" use:enhance class="space-y-4">
-				{#if form?.message}
-					<div class="{form?.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'} p-3 rounded mb-4">
+			<form 
+				method="POST" 
+				action="?/addCompany" 
+				use:enhance={({ formElement, formData, action, cancel }) => {
+					// This callback runs after the form submits, but before the request is sent
+					// Optional: Add loading state logic here if desired
+					
+					return async ({ result, update }) => {
+						// This callback runs after the server action completes
+						
+						// Update the form prop which contains the action result
+						await update(); 
+
+						// Check the result from the server action (via the updated form prop)
+						if (form?.success) { 
+							toast.success(form.message || 'Company added successfully!');
+							await invalidateAll(); // Invalidate data to re-run the load function
+							formElement.reset(); // Reset the form fields
+						} else if (form?.message) { 
+							// Display error message from ActionData if available and not success
+							toast.error(form.message);
+						} else if (result.type === 'error') {
+							// Fallback for network or other fetch errors
+							toast.error(result.error.message || 'Failed to add company due to a network error.');
+						}
+						// Optional: Handle other result types like 'redirect' if needed
+					};
+				}} 
+				class="space-y-4"
+			>
+				{#if form?.message && !form?.success} <!-- Only show inline error if needed -->
+					<div class="bg-red-100 text-red-800 p-3 rounded mb-4">
 						{form.message}
 					</div>
 				{/if}
@@ -163,6 +184,7 @@
 					<Button type="submit">Add Company</Button>
 				</div>
 			</form>
+			<!-- Removed erroneous script tag -->
 		</Card.Content>
 	</Card.Root>
 

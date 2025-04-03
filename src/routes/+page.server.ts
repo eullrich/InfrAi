@@ -4,50 +4,107 @@ import { error } from '@sveltejs/kit';
 
 import type { CompanyWithInsights } from '$lib/types'; // Assuming a type definition exists or needs creation
 
-export const load: PageServerLoad = async () => {
+// Add event argument to match PageServerLoad type signature
+export const load: PageServerLoad = async (event) => { 
 	console.log('Loading companies and insights for homepage...');
-	const { data: companies, error: dbError } = await supabase
-		.from('companies')
-		.select(`
-      id, 
-      name, 
-      company_insights (
-        tagline,
-        offers_hosted_inference,
-        offers_rentable_gpus,
-        offers_finetuning_pipeline
-      )
-    `); // Fetching related insights
+	
+	let companiesWithFlattenedInsights: CompanyWithInsights[] = [];
+	let uniqueTags: string[] = [];
 
-	if (dbError) {
-		console.error('Error fetching companies and insights:', dbError);
-		throw error(500, 'Database error: Could not fetch companies and insights.');
+	try {
+		// We don't need event.locals here, but including the argument satisfies the type.
+		const { data: companies, error: dbError } = await supabase
+			.from('companies')
+			.select(`
+	      id,
+	      name,
+	      company_insights (
+	        tagline,
+	        offering_labels, 
+	        service_offerings 
+	      )
+	    `) // Removed comments from select string
+			.order('name', { ascending: true }); // Add ordering for consistency
+
+		if (dbError) {
+			console.error('Error fetching companies and insights:', dbError);
+			// Throw the error to trigger SvelteKit's error page
+			throw error(500, `Database error fetching companies: ${dbError.message}`);
+		}
+
+		if (!companies) {
+			console.log('No companies data returned from Supabase.');
+			// Return empty data, page will show "No Companies Found"
+			return { companies: [], uniqueTags: [], session: null };
+		}
+
+		// Map and flatten data
+		companiesWithFlattenedInsights = companies.map((c: any) => { 
+			const insights = Array.isArray(c?.company_insights) 
+				? c.company_insights[0] 
+				: (typeof c?.company_insights === 'object' && c.company_insights !== null ? c.company_insights : null);
+
+			// Define default structure for insights if null
+			const safeInsights = insights || {
+				tagline: null,
+				offering_labels: [], 
+				service_offerings: [] 
+			};
+
+			// Extract tags from service_offerings for filter UI (needed by +page.svelte)
+			const serviceOfferingsTags = (safeInsights.service_offerings && Array.isArray(safeInsights.service_offerings)
+				? safeInsights.service_offerings.flatMap((so: { tags?: string[] }) => so?.tags || []) 
+				: []) as string[];
+
+			return {
+				id: c.id,
+				name: c.name,
+				tagline: safeInsights.tagline, 
+				offering_labels: safeInsights.offering_labels || [],
+				service_offerings_tags: serviceOfferingsTags // Ensure this is included for filtering
+			};
+		});
+
+		// Extract all unique tags from offering_labels for the FILTER UI
+		const allTags = new Set<string>();
+		companies.forEach((c: any) => { // Iterate over original companies data
+			if (!c || !c.company_insights) return;
+
+			const insights = Array.isArray(c.company_insights)
+				? c.company_insights[0]
+				: (typeof c.company_insights === 'object' && c.company_insights !== null ? c.company_insights : null);
+
+			if (!insights) return;
+
+			const labels = insights.offering_labels; // Use offering_labels
+			if (labels && Array.isArray(labels)) {
+				labels.forEach((label: string) => { // Iterate through labels
+					if (label) {
+						allTags.add(label); // Add each label to the set
+					}
+				});
+			}
+		});
+		uniqueTags = Array.from(allTags).sort();
+
+	} catch (err: any) {
+		// Catch any unexpected errors during processing
+		console.error('Unexpected error in homepage load function:', err);
+		// Throw a generic 500 error
+		throw error(500, err.message || 'An unexpected error occurred while loading homepage data.');
 	}
 
-	// Supabase returns related data as an array. Since it's a one-to-one or one-to-zero relationship here, 
-	// we'll flatten the structure for easier use in the component.
-	const companiesWithFlattenedInsights = companies?.map(c => {
-		// Ensure company_insights is an object, not an array, and handle null/undefined cases
-		const insights = Array.isArray(c.company_insights) ? c.company_insights[0] : c.company_insights;
-		return {
-			...c,
-			// Explicitly map insight fields, providing defaults if insights are missing
-			tagline: insights?.tagline ?? null,
-			offers_hosted_inference: insights?.offers_hosted_inference ?? false,
-			offers_rentable_gpus: insights?.offers_rentable_gpus ?? false,
-			offers_finetuning_pipeline: insights?.offers_finetuning_pipeline ?? false,
-			// Remove the nested company_insights object after flattening
-			company_insights: undefined 
-		};
-	}) || [];
-
-
+	// Final check before returning
 	if (!companiesWithFlattenedInsights) {
-		console.log('No companies or insights found.');
-		return { companies: [] }; // Return the structured data
+		companiesWithFlattenedInsights = []; // Ensure it's always an array
 	}
 
 	console.log(`Fetched ${companiesWithFlattenedInsights.length} companies with insights.`);
-	// console.log('Data structure:', JSON.stringify(companiesWithFlattenedInsights[0], null, 2)); // For debugging
-	return { companies: companiesWithFlattenedInsights as CompanyWithInsights[] }; // Pass the processed data
+	console.log(`Found ${uniqueTags.length} unique tags: ${uniqueTags.join(', ')}`);
+	
+	return { 
+		companies: companiesWithFlattenedInsights, 
+		uniqueTags: uniqueTags,
+		session: null 
+	}; 
 };

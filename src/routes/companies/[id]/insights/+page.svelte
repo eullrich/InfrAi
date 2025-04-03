@@ -7,15 +7,12 @@
 	import { toast } from 'svelte-sonner';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { invalidateAll } from '$app/navigation'; // Import invalidateAll
+	import type { CompanyInsights } from '$lib/types'; // Import the specific type
 
 	export let data: PageData;
 
-	// Helper function to format boolean flags
-	function formatBoolean(value: boolean | null | undefined): string {
-		if (value === true) return 'Yes';
-		if (value === false) return 'No';
-		return 'N/A';
-	}
+	// Explicitly type insights derived from data for better type checking in template
+	$: insights = data.insights as CompanyInsights | null;
 
 	// Helper to format dates nicely
 	function formatDate(dateString: string | undefined | null): string {
@@ -27,17 +24,7 @@
 		}
 	}
 
-	// Helper function to get appropriate badge variant based on boolean value
-	function getBooleanBadgeVariant(value: boolean | null | undefined): 'secondary' | 'outline' {
-		return value === true ? 'secondary' : 'outline';
-	}
-
-	// Helper function to get appropriate badge color class based on boolean value
-	function getBooleanBadgeClass(value: boolean | null | undefined): string {
-		if (value === true) return 'border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300';
-		if (value === false) return 'border-red-300 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-300';
-		return 'border-gray-300 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300'; // N/A style
-	}
+	// Removed boolean helper functions as they are replaced by offering_labels
 
 </script>
 
@@ -53,9 +40,9 @@
 			{/if}
 		</h1>
 
-		{#if data.insights?.tagline}
+		{#if insights?.tagline}
 			<p class="text-lg md:text-xl text-indigo-700 dark:text-indigo-300 font-medium mt-1 mb-6 max-w-3xl mx-auto">
-				"{data.insights.tagline}"
+				"{insights.tagline}"
 			</p>
 		{/if}
 
@@ -77,9 +64,9 @@
 				</a>
 			{/if}
 
-			{#if data.insights?.x_url}
+			{#if insights?.x_url}
 				<a
-					href={data.insights.x_url}
+					href={insights.x_url}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center justify-center h-9 w-9 bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-full text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors shadow-sm"
@@ -91,9 +78,9 @@
 				</a>
 			{/if}
 
-			{#if data.insights?.linkedin_url}
+			{#if insights?.linkedin_url}
 				<a
-					href={data.insights.linkedin_url}
+					href={insights.linkedin_url}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center justify-center h-9 w-9 bg-white dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 rounded-full text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors shadow-sm"
@@ -113,7 +100,7 @@
 	<div class="container mx-auto px-6">
 		<!-- Removed the empty navigation tabs div -->
 
-		{#if data.insights}
+		{#if insights} 
 			<!-- Main content grid -->
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
@@ -130,64 +117,52 @@
 							</Card.Title>
 						</Card.Header>
 						<Card.Content class="p-5 space-y-4">
-							{#if data.insights.mission}
+							{#if insights.mission}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-1.5">Mission</h4>
-									<p class="text-sm text-gray-700 dark:text-gray-300">{data.insights.mission}</p>
+									<p class="text-sm text-gray-700 dark:text-gray-300">{insights.mission}</p>
 								</div>
 							{/if}
-							{#if data.insights.target_audience}
+							{#if insights.target_audience}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-1.5">Target Audience</h4>
-									<p class="text-sm text-gray-700 dark:text-gray-300">{data.insights.target_audience}</p>
+									<p class="text-sm text-gray-700 dark:text-gray-300">{insights.target_audience}</p>
 								</div>
 							{/if}
-							{#if !data.insights.mission && !data.insights.target_audience}
+							{#if !insights.mission && !insights.target_audience}
 								<p class="text-sm text-gray-500 dark:text-gray-400 italic">No overview details available.</p>
 							{/if}
 						</Card.Content>
 					</Card.Root>
 
-					<!-- Product Categories Card -->
+					<!-- Product Categories Card (Updated) -->
 					<Card.Root class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700/50 bg-white dark:bg-gray-800/50 shadow-sm transition-shadow hover:shadow-md">
 						<Card.Header class="border-b border-gray-100 dark:border-gray-700/50 p-5">
 							<Card.Title class="text-lg font-semibold flex items-center text-gray-900 dark:text-white">
 								<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-green-500" viewBox="0 0 20 20" fill="currentColor">
 									<path fill-rule="evenodd" d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h10v7h-2l-1 2H8l-1-2H5V5z" clip-rule="evenodd" />
 								</svg>
-								Product Categories
+								Key Offerings
 							</Card.Title>
 						</Card.Header>
 						<Card.Content class="p-5">
-							<div class="space-y-3">
-								<div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
-									<div class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-										<div class="w-2.5 h-2.5 rounded-full bg-blue-500 mr-2.5 flex-shrink-0"></div>
-										Hosted Inference
-									</div>
-									<Badge variant={getBooleanBadgeVariant(data.insights.offers_hosted_inference)} class={getBooleanBadgeClass(data.insights.offers_hosted_inference)}>
-										{formatBoolean(data.insights.offers_hosted_inference)}
-									</Badge>
+							{#if insights.offering_labels && insights.offering_labels.length > 0}
+								<div class="flex flex-wrap gap-2">
+									{#each insights.offering_labels as label (label)}
+										{@const colorMap: { [key: string]: string } = { 
+											'Hosted Inference': 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+											'Rentable GPUs': 'border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+											'Finetuning': 'border-green-300 bg-green-50 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300'
+										}}
+										{@const defaultColor = 'border-gray-300 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300'}
+										<Badge variant="outline" class="{colorMap[label] ?? defaultColor}">
+											{label}
+										</Badge>
+									{/each}
 								</div>
-								<div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
-									<div class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-										<div class="w-2.5 h-2.5 rounded-full bg-purple-500 mr-2.5 flex-shrink-0"></div>
-										Rentable GPUs
-									</div>
-									<Badge variant={getBooleanBadgeVariant(data.insights.offers_rentable_gpus)} class={getBooleanBadgeClass(data.insights.offers_rentable_gpus)}>
-										{formatBoolean(data.insights.offers_rentable_gpus)}
-									</Badge>
-								</div>
-								<div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
-									<div class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-										<div class="w-2.5 h-2.5 rounded-full bg-yellow-500 mr-2.5 flex-shrink-0"></div>
-										Finetuning Pipeline
-									</div>
-									<Badge variant={getBooleanBadgeVariant(data.insights.offers_finetuning_pipeline)} class={getBooleanBadgeClass(data.insights.offers_finetuning_pipeline)}>
-										{formatBoolean(data.insights.offers_finetuning_pipeline)}
-									</Badge>
-								</div>
-							</div>
+							{:else}
+								<p class="text-sm text-gray-500 dark:text-gray-400 italic">No specific offerings identified.</p>
+							{/if}
 						</Card.Content>
 					</Card.Root>
 				</div>
@@ -205,9 +180,9 @@
 							</Card.Title>
 						</Card.Header>
 						<Card.Content class="p-5">
-							{#if data.insights.service_offerings && data.insights.service_offerings.length > 0}
+							{#if insights.service_offerings && insights.service_offerings.length > 0}
 								<div class="space-y-4">
-									{#each data.insights.service_offerings as service, i}
+									{#each insights.service_offerings as service, i}
 										<div class="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
 											<h4 class="text-md font-semibold mb-1.5 text-gray-800 dark:text-gray-100">
 												{service.name || 'Unnamed Service'}
@@ -249,11 +224,11 @@
 							</Card.Title>
 						</Card.Header>
 						<Card.Content class="p-5 space-y-5">
-							{#if data.insights.key_differentiators && data.insights.key_differentiators.length > 0}
+							{#if insights.key_differentiators && insights.key_differentiators.length > 0}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">Key Differentiators</h4>
 									<ul class="space-y-2">
-										{#each data.insights.key_differentiators as diff}
+										{#each insights.key_differentiators as diff}
 											<li class="flex items-start">
 												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-green-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
 													<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
@@ -265,20 +240,20 @@
 								</div>
 							{/if}
 
-							{#if data.insights.technology_overview}
+							{#if insights.technology_overview}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">Technology Overview</h4>
 									<div class="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
-										<p class="text-sm text-gray-700 dark:text-gray-300">{data.insights.technology_overview}</p>
+										<p class="text-sm text-gray-700 dark:text-gray-300">{insights.technology_overview}</p>
 									</div>
 								</div>
 							{/if}
 
-							{#if data.insights.partnerships && data.insights.partnerships.length > 0}
+							{#if insights.partnerships && insights.partnerships.length > 0}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">Partnerships</h4>
 									<div class="flex flex-wrap gap-2">
-										{#each data.insights.partnerships as partner}
+										{#each insights.partnerships as partner}
 											<Badge variant="outline" class="border-gray-300 bg-gray-100 text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 text-xs">
 												{partner}
 											</Badge>
@@ -300,11 +275,11 @@
 							</Card.Title>
 						</Card.Header>
 						<Card.Content class="p-5 space-y-5">
-							{#if data.insights.known_customers && data.insights.known_customers.length > 0}
+							{#if insights.known_customers && insights.known_customers.length > 0}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">Known Customers</h4>
 									<div class="flex flex-wrap gap-2">
-										{#each data.insights.known_customers as customer}
+										{#each insights.known_customers as customer}
 											<Badge variant="outline" class="border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-xs">
 												{customer}
 											</Badge>
@@ -318,11 +293,11 @@
 								</div>
 							{/if}
 
-							{#if data.insights.pricing_overview}
+							{#if insights.pricing_overview}
 								<div>
 									<h4 class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400 mb-2">Pricing Overview</h4>
 									<div class="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
-										<p class="text-sm text-gray-700 dark:text-gray-300">{data.insights.pricing_overview}</p>
+										<p class="text-sm text-gray-700 dark:text-gray-300">{insights.pricing_overview}</p>
 									</div>
 								</div>
 							{:else}
@@ -340,14 +315,14 @@
 			<div class="mt-16 border-t border-gray-200 dark:border-gray-700/50 pt-8 text-xs text-gray-500 dark:text-gray-400">
 				<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
 					<div>
-						<strong class="font-medium text-gray-600 dark:text-gray-300">Generated:</strong> {formatDate(data.insights.processed_at)}
+						<strong class="font-medium text-gray-600 dark:text-gray-300">Generated:</strong> {formatDate(insights.processed_at)}
 					</div>
 					<div>
-						<strong class="font-medium text-gray-600 dark:text-gray-300">Model:</strong> {data.insights.llm_model_used ?? 'N/A'}
+						<strong class="font-medium text-gray-600 dark:text-gray-300">Model:</strong> {insights.llm_model_used ?? 'N/A'}
 					</div>
-					{#if data.insights.source_page_ids && data.insights.source_page_ids.length > 0}
+					{#if insights.source_page_ids && insights.source_page_ids.length > 0}
 						<div>
-							<strong class="font-medium text-gray-600 dark:text-gray-300">Sources:</strong> {data.insights.source_page_ids.length} pages
+							<strong class="font-medium text-gray-600 dark:text-gray-300">Sources:</strong> {insights.source_page_ids.length} pages
 						</div>
 					{/if}
 				</div>
