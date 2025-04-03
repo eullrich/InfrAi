@@ -141,6 +141,11 @@ export const POST: RequestHandler = async ({ params }) => {
     *   If text mentions "hosted inference," "model hosting," "inference API," or similar, include the label "Hosted Inference".
     *   If text mentions "GPU rental," "cloud GPUs," "GPU access," or similar, include the label "Rentable GPUs".
     *   If text mentions "fine-tuning pipeline," "model customization," "tuning service," or similar, include the label "Finetuning".
+    *   If text mentions "RPC endpoint," "node service," "blockchain API," or similar, include the label "RPC Service".
+    *   If text mentions "on-chain data," "blockchain data," "indexed data," or similar, include the label "Onchain Data".
+    *   If text mentions "bare metal," "dedicated server," or similar, include the label "Baremetal Server".
+    *   If text mentions "VPS," "virtual private server," "cloud server," or similar, include the label "Virtual Private Server".
+    *   If text mentions "hosted database," "managed database," "database service," or similar, include the label "Hosted Database".
 *   **target_audience (text):** Identify intended customers (industries, company sizes, use cases). Summarize briefly (e.g., "Enterprises in healthcare"). Use null if not specified.
 *   **key_differentiators (ARRAY of text):** Extract unique selling points (unique features, proprietary tech). Look for "patented technology," "industry-first." Return array of strings or null.
 *   **technology_overview (text):** Summarize the tech stack, algorithms, methods (e.g., "Uses deep learning"). Use null if no details.

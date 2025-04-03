@@ -46,10 +46,10 @@
 	<div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgdmlld0JveD0iMCAwIDIwIDIwIj48cmVjdCB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIGZpbGw9IiNmYWZhZmEiIG9wYWNpdHk9IjAuMSI+PC9yZWN0Pjwvc3ZnPg==')] opacity-50 dark:opacity-[0.03]"></div>
 	<div class="container mx-auto px-6 text-center relative z-10">
 		<h1 class="text-4xl md:text-6xl font-extrabold tracking-tight mb-4 text-gray-900 dark:text-white leading-tight">
-			Explore the AI Infrastructure Landscape
+			Powering Innovation: The Infrastructure Directory
 		</h1>
 		<p class="text-lg md:text-xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto mb-10">
-			Discover and compare providers offering hosted inference, rentable GPUs, and fine-tuning solutions.
+			Your guide to compute, data, and network solutions for AI, Web3, and the next wave of technology.
 		</p>
 	</div>
 </section>
@@ -57,9 +57,6 @@
 <!-- Companies Grid Section -->
 <section id="companies" class="py-16 md:py-24 bg-white dark:bg-gray-950">
 	<div class="container mx-auto px-6">
-		<h2 class="text-3xl md:text-4xl font-bold mb-12 text-center text-gray-900 dark:text-white">
-			Featured Companies
-		</h2>
 
 		<!-- Filter Section - Redesigned -->
 		{#if uniqueTags.length > 0}
