@@ -2,7 +2,14 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { supabase } from '$lib/supabase-init.server';
 
 export async function GET({ params }: RequestEvent) {
-  const companyId = params.id;
+  const companyId = Number(params.id);
+
+  if (isNaN(companyId)) {
+    return new Response(JSON.stringify({ error: 'Invalid companyId' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 
   try {
     const { data: pages, error } = await supabase
