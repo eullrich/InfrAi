@@ -1,4 +1,6 @@
 // src/routes/api/start-crawl/+server.ts
+export const config = { runtime: 'nodejs' };
+
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
