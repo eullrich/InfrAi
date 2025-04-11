@@ -4,7 +4,28 @@ import type { Config } from "tailwindcss";
 const config: Config = {
 	darkMode: ["class"],
 	content: ["./src/**/*.{html,js,svelte,ts}"],
-	safelist: ["dark"],
+	safelist: [
+		"dark",
+		// Badge colors to safelist
+		// Blue
+		"border-blue-500", "bg-blue-100", "text-blue-700",
+		"dark:border-blue-500", "dark:bg-blue-900/50", "dark:text-blue-200",
+		// Purple
+		"border-purple-500", "bg-purple-100", "text-purple-700",
+		"dark:border-purple-500", "dark:bg-purple-900/50", "dark:text-purple-200",
+		// Cyan
+		"border-cyan-500", "bg-cyan-100", "text-cyan-700",
+		"dark:border-cyan-500", "dark:bg-cyan-900/50", "dark:text-cyan-200",
+		// Green
+		"border-green-500", "bg-green-100", "text-green-700",
+		"dark:border-green-500", "dark:bg-green-900/50", "dark:text-green-200",
+		// Orange
+		"border-orange-500", "bg-orange-100", "text-orange-700",
+		"dark:border-orange-500", "dark:bg-orange-900/50", "dark:text-orange-200",
+		// Grey (Default) - Already likely included but good to be explicit
+		"border-gray-400", "bg-gray-100", "text-gray-700",
+		"dark:border-gray-600", "dark:bg-gray-700/50", "dark:text-gray-300",
+	],
 	theme: {
 		container: {
 			center: true,
